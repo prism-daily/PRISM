@@ -175,14 +175,31 @@ function pickFile() {
   if (FILE_ARG) return FILE_ARG
   const dir = 'drafts'
   if (!existsSync(dir)) return ''
-  const files = readdirSync(dir).filter((f) => /\.(txt|md)$/.test(f)).sort()
+  /*
+   * README.md 要排掉——它是这个目录的说明，不是稿子。少了这一句，
+   * 一次「什么都没改只改了说明」的提交会让发稿脚本去解析说明文档，
+   * 报一句「没有 ===ITEM=== 块」然后红着退出。
+   *
+   * 稿子按文件名排序取最后一个，所以文件名请用日期（2026-09-09.txt）。
+   */
+  const files = readdirSync(dir).filter((f) => /\.(txt|md)$/.test(f) && !/^README/i.test(f)).sort()
   return files.length ? join(dir, files[files.length - 1]) : ''
 }
 
 const file = pickFile()
-if (!file || !existsSync(file)) {
-  console.error('没有找到稿子。放一份到 drafts/，或者 node scripts/publish.mjs 路径')
+/*
+ * 「指名要发的那份不存在」和「drafts/ 里眼下没有稿子」是两件事，
+ * 结局也该不一样：前者是打错了名字，要红着停下；后者是一次只改了说明
+ * 的提交顺手触发了这个 workflow，没什么可发的——那不是错误，
+ * 一片红色的失败记录只会让人以后不敢看 Actions。
+ */
+if (FILE_ARG && !existsSync(FILE_ARG)) {
+  console.error(`没有这份稿子：${FILE_ARG}`)
   process.exit(2)
+}
+if (!file) {
+  console.log('drafts/ 里眼下没有稿子，这一轮没有可发的。')
+  process.exit(0)
 }
 if (!DRY && (!SUPABASE_URL || !SERVICE_KEY)) {
   console.error('缺 SUPABASE_URL 或 SUPABASE_SERVICE_KEY。只想校验就加 --dry。')
