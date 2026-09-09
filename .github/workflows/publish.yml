@@ -16,7 +16,12 @@ name: 发稿
 
 on:
   push:
-    branches: [main]
+    # 这个仓库的默认分支不是 main（是下面那一个长名字的），而 pages.yml
+    # 两个都认。发稿这条路照抄同一份名单：往任何一个推一份新稿子都算数，
+    # 不然会出现「文件提交了、站上没动静」——站长上一次就是这么被绊住的。
+    branches:
+      - main
+      - claude/prism-feminist-media-platform-2er8su
     paths: ['drafts/**']
   workflow_dispatch:
     inputs:
