@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { stripSelfVoice, isSelfVoice, cleanLine } from './voice.mjs'
 import { parseSeek } from './seek.mjs'
+import { parseDraft, parseLinks } from './draft.mjs'
 
 const out = join(process.cwd(), 'node_modules', '.cache', 'prism-smoke')
 mkdirSync(out, { recursive: true })
@@ -2288,6 +2289,84 @@ await test('开着联网搜索的时候，超时不能按字数算', () => {
   ok(/search \? 600000 : 180000/.test(llm), '开着搜索的时候要有一个十分钟的地板')
   ok(/const \{ maxTokens = 8000, search = false, timeoutMs = timeoutFor\(maxTokens, search\)/.test(llm),
     'search 要在 timeoutMs 之前解构，否则默认值算的时候它还是 undefined')
+})
+
+
+await test('手写的稿子：站长定的规矩，要在发出去之前拦住', () => {
+  /*
+   * 这条路是站长自己提的：「我能不能每天给你一个信息在这里帮我更新，
+   * 我不用 API 但是我用你的算力。」稿子在对话里写完，提交成文件，
+   * scripts/publish.mjs 负责发——**那一段没有模型**，所以也没有模型
+   * 顺手挡掉坏内容的那一层。挡的活儿全在这几条校验上。
+   *
+   * 而它们不是形式：
+   *   - 两个来源是站长定的（「每个新闻最好有两个或以上的引用」），
+   *     上一批内地新闻里有九条只有一个来源，现在还欠着；
+   *   - 「PRISM 将持续关注」这类句子他说过三次不要，这个站不派记者，
+   *     写出来就是一句假话；
+   *   - 角标 [1] 他也明确不要，出处要在句子里点名。
+   */
+  const long = '正文'.repeat(220)
+  const draft = [
+    '===ITEM 1===',
+    'HEADLINE: 一条合格的稿子',
+    'TOPICS: sexual',
+    'REGIONS: tw',            // 旧地区名，应该被翻译成 jpkr 而不是丢掉
+    'LINKS:',
+    '- 澎湃新闻 | https://www.thepaper.cn/a | 2026-09-08 | 原标题',
+    '- 路透社 | https://www.reuters.com/b',
+    'SUMMARY:',
+    long,
+    '===END 1===',
+    '===ITEM 2===',
+    'HEADLINE: 一条不合格的稿子',
+    'TOPICS: sexual',
+    'REGIONS: cn',
+    'LINKS:',
+    '- 某媒体 | https://example.com/c',
+    'SUMMARY:',
+    `${long}PRISM 将持续关注该案后续。据报道[1]，案件已移送检方。`,
+    '===END 2===',
+  ].join('\n')
+
+  const [good, bad] = parseDraft(draft)
+  eq(good.bad.length, 0, `合格的那条不该有问题：${good.bad.join('；')}`)
+  eq(good.regions.join(','), 'jpkr', '台湾并进日韩台之后，旧写法要翻译，不是丢掉')
+  eq(good.links.length, 2, '两个来源都要解析出来')
+  eq(good.links[0].outlet, '澎湃新闻', '媒体名要认出来')
+  eq(good.links[1].url, 'https://www.reuters.com/b', '省掉日期和标题也要认得出网址')
+
+  const why = bad.bad.join('；')
+  ok(/只有 1 个来源/.test(why), `只有一个来源要拦住：${why}`)
+  ok(/本站自述/.test(why), `「PRISM 将持续关注」要拦住：${why}`)
+  ok(/角标/.test(why), `[1] 这种角标要拦住：${why}`)
+
+  // 只有一家报道过的调查确实存在，所以要留一个需要每次单独决定的口子。
+  const [, relaxed] = parseDraft(draft, { allowSingle: true })
+  ok(!/只有 1 个来源/.test(relaxed.bad.join('；')), '--allow-single 要能放行单来源')
+
+  // 来源行的字段顺序写乱了也要认得：手写的时候顺序难免会颠倒。
+  const [l] = parseLinks('- https://www.bbc.com/zhongwen/x | BBC 中文 | 2026-09-01')
+  eq(l.url, 'https://www.bbc.com/zhongwen/x', '哪一段是网址按长相认，不按位置认')
+  eq(l.date, '2026-09-01', '日期同理')
+})
+
+await test('发稿这条路不能带第三方依赖', () => {
+  /*
+   * .github/workflows/publish.yml **故意没有 npm ci**：这个 job 正常
+   * 十几秒就跑完，装依赖要一分多钟。代价是——一旦有人在这条链路上
+   * import 了一个包，这个 workflow 会在 Actions 上直接崩，
+   * 而那时候站长手里正拿着一份写好的稿子等着发。
+   */
+  const chain = ['publish.mjs', 'draft.mjs', 'blocks.mjs', 'taxonomy.mjs', 'voice.mjs', 'feedparse.mjs', 'feeds.mjs']
+  for (const f of chain) {
+    const src = readFileSync(join(process.cwd(), 'scripts', f), 'utf8')
+    for (const m of src.matchAll(/^import .*? from '([^']+)'/gm)) {
+      ok(m[1].startsWith('node:') || m[1].startsWith('./'), `${f} 引了第三方包 ${m[1]}，发稿的 workflow 里没有 npm ci`)
+    }
+  }
+  const yml = readFileSync(join(process.cwd(), '.github/workflows/publish.yml'), 'utf8')
+  ok(!/inputs\.file \}\}[^\n]*$/m.test(yml.split('run:')[1] ?? ''), '文件名要经环境变量进来，不能拼进 shell 命令')
 })
 
 /* ------------------------------ 结果 ------------------------------ */

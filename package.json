@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "validate": "node scripts/validate-demo.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "publish": "node scripts/publish.mjs",
     "check": "tsc --noEmit && node scripts/check-schema.mjs && node scripts/validate-demo.mjs && node scripts/smoke.mjs",
     "ui-check": "node scripts/ui-check.mjs",
     "console-check": "node scripts/console-check.mjs",
