@@ -1,0 +1,77 @@
+# 发一份手写的稿子。**这个 job 不碰模型，账单是零。**
+#
+# 站长：「我能不能每天给你一个信息在这里帮我更新，我不用 API 但是我用你的算力。」
+#
+# 于是分工变成这样：
+#   搜索、读原文、按方针写稿  → 在对话里做（用的是对话的算力，不计 API 费用）
+#   校验、配图、写数据库      → 这里做（纯脚本，没有模型，一分钱不花）
+#
+# 稿子以文本文件的形式提交进 drafts/。往 main 推一份新的，这个 workflow
+# 自动跑；也可以在 Actions 里手动挑一份跑。
+#
+# 它和「找新闻」那个 workflow 是两条独立的路：那条会花钱（模型联网搜索、
+# 写稿），这条不会。两条都往同一张表里写，站上看不出区别，
+# 只有 origin 字段分得清是机器收的还是人写的。
+name: 发稿
+
+on:
+  push:
+    # 这个仓库的默认分支不是 main（是下面那一个长名字的），而 pages.yml
+    # 两个都认。发稿这条路照抄同一份名单：往任何一个推一份新稿子都算数，
+    # 不然会出现「文件提交了、站上没动静」——站长上一次就是这么被绊住的。
+    branches:
+      - main
+      - claude/prism-feminist-media-platform-2er8su
+    paths: ['drafts/**']
+  workflow_dispatch:
+    inputs:
+      file:
+        description: '要发的那份稿子（留空则发 drafts/ 里最新的一份）'
+        type: string
+        default: ''
+      dry:
+        description: '只校验，不写数据库'
+        type: boolean
+        default: false
+      hold:
+        description: '写进去但先下架，等过目（默认直接上线）'
+        type: boolean
+        default: false
+      allow_single:
+        description: '允许只有一个来源的条目（默认拦住——站长定的是两个起）'
+        type: boolean
+        default: false
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 没有 npm ci：这条路上一个第三方包都不用（见 scripts/publish.mjs 的
+      # import 列表，全是 node: 内置和本仓库自己的文件）。装依赖要一分多钟，
+      # 而整个 job 本来只要十几秒。
+      - name: 发稿
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # 手动触发时填的那个文件名，经环境变量进来。
+          # 不要直接把 ${{ inputs.file }} 插进 run 里——那是把一段
+          # 外部输入拼进 shell 命令，一个引号就能让它执行别的东西。
+          FILE: ${{ inputs.file }}
+          FLAGS: >-
+            ${{ inputs.dry && '--dry' || '' }}
+            ${{ inputs.hold && '--hold' || '' }}
+            ${{ inputs.allow_single && '--allow-single' || '' }}
+        run: node scripts/publish.mjs $FLAGS "${FILE:-}"

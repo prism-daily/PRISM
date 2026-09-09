@@ -225,7 +225,23 @@ export function parseFeed(xml, outlet = '来源媒体') {
     summary: tag(b, 'description') || tag(b, 'summary') || tag(b, 'content'),
     date: tag(b, 'pubDate') || tag(b, 'published') || tag(b, 'updated') || tag(b, 'dc:date'),
     image: imageOf(b, outlet),
+    /*
+     * `<source url="…">媒体名</source>`。
+     *
+     * 一般的订阅源用不上——那一整条源就是一家媒体。但**新闻搜索的 RSS**
+     * （Google News、Bing News）一条结果一家媒体，媒体名只在这个标签里。
+     * 没有它，搜来的每条新闻都得叫「来源」。
+     */
+    source: sourceOf(b),
   })).filter((e) => e.title && e.link)
+}
+
+/** `<source url="…">名字</source>` → { url, name }，没有就是 undefined。 */
+function sourceOf(block) {
+  const m = /<source[^>]*\burl=["']([^"']+)["'][^>]*>([\s\S]*?)<\/source>/i.exec(block)
+  if (!m) return undefined
+  const name = m[2].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '').trim()
+  return { url: m[1].trim(), name }
 }
 
 /* ------------------------------------------------------------------ *

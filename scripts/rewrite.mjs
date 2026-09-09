@@ -15,6 +15,7 @@
  */
 import { ask, askText, llmName } from './llm.mjs'
 import { splitBlocks, parseBlock, parseList, parseEnum, parseYes } from './blocks.mjs'
+import { TOPICS, REGIONS, REGION_ALIAS } from './taxonomy.mjs'
 import { cleanLine, stripSelfVoice } from './voice.mjs'
 import { systemPrompt, triagePrompt } from './editorial.mjs'
 
@@ -183,14 +184,7 @@ function matchBack(batch, text) {
 
 const FIELDS = ['KEEP', 'HEADLINE', 'SUBHEAD', 'TOPICS', 'REGIONS', 'BULLETS', 'SUMMARY']
 
-const TOPICS = new Set(['domestic', 'sexual', 'children', 'rights', 'lgbtq', 'hate', 'displacement', 'incel', 'movement'])
-/*
- * 'tw' 不在里面了——台湾并进了 jpkr。但模型偶尔还是会写 'tw'（训练里见得多），
- * 直接丢掉那一条会让一篇台湾的报道变成「没有地区」。所以先翻译再校验，
- * 和网站那边 REGION_ALIAS 做的是同一件事。
- */
-const REGION_ALIAS = { tw: 'jpkr' }
-const REGIONS = new Set(['cn', 'hk', 'jpkr', 'us', 'eu', 'anz', 'sea', 'sasia', 'mena', 'ru', 'africa', 'latam', 'global'])
+/* 议题与地区的名单在 scripts/taxonomy.mjs——手写稿那条路也用同一份。 */
 
 /**
  * 校验模型的产出。
